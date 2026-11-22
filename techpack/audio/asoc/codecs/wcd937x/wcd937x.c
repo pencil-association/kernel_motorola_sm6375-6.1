@@ -60,6 +60,8 @@ enum {
 	HPH_COMP_DELAY,
 	HPH_PA_DELAY,
 	AMIC2_BCS_ENABLE,
+	WCD_HPHL_EN,
+	WCD_EAR_EN,
 };
 
 static const DECLARE_TLV_DB_SCALE(line_gain, 0, 7, 1);
@@ -688,7 +690,7 @@ static int wcd937x_codec_ear_dac_event(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_CDC_COMP_CTL_0,
 				0x02, 0x02);
-		usleep_range(5000, 5010);
+		usleep_range(5000, 5500);
 		snd_soc_component_update_bits(component, WCD937X_FLYBACK_EN,
 				0x04, 0x00);
 		wcd_cls_h_fsm(component, &wcd937x->clsh_info,
@@ -790,9 +792,9 @@ static int wcd937x_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 		 */
 		if (test_bit(HPH_PA_DELAY, &wcd937x->status_mask)) {
 			if (!wcd937x->comp2_enable)
-				usleep_range(20000, 20100);
+				usleep_range(20000, 20500);
 			else
-				usleep_range(7000, 7100);
+				usleep_range(7000, 7500);
 			clear_bit(HPH_PA_DELAY, &wcd937x->status_mask);
 		}
 
@@ -830,9 +832,9 @@ static int wcd937x_codec_enable_hphr_pa(struct snd_soc_dapm_widget *w,
 		 */
 		if (test_bit(HPH_PA_DELAY, &wcd937x->status_mask)) {
 			if (!wcd937x->comp2_enable)
-				usleep_range(20000, 20100);
+				usleep_range(20000, 20500);
 			else
-				usleep_range(7000, 7100);
+				usleep_range(7000, 7500);
 			clear_bit(HPH_PA_DELAY, &wcd937x->status_mask);
 		}
 
@@ -880,6 +882,7 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 		set_bit(HPH_PA_DELAY, &wcd937x->status_mask);
 		snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_PDM_WD_CTL0, 0x17, 0x13);
+		set_bit(WCD_HPHL_EN, &wcd937x->status_mask);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		/*
@@ -889,9 +892,9 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 		 */
 		if (test_bit(HPH_PA_DELAY, &wcd937x->status_mask)) {
 			if (!wcd937x->comp1_enable)
-				usleep_range(20000, 20100);
+				usleep_range(20000, 20500);
 			else
-				usleep_range(7000, 7100);
+				usleep_range(7000, 7500);
 			clear_bit(HPH_PA_DELAY, &wcd937x->status_mask);
 		}
 
@@ -906,16 +909,19 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 			wcd937x->update_wcd_event(wcd937x->handle,
 						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10));
-		wcd_enable_irq(&wcd937x->irq_info,
-				WCD937X_IRQ_HPHL_PDM_WD_INT);
+		if (!test_bit(WCD_EAR_EN, &wcd937x->status_mask))
+			wcd_enable_irq(&wcd937x->irq_info,
+					WCD937X_IRQ_HPHL_PDM_WD_INT);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		wcd_disable_irq(&wcd937x->irq_info,
+		if (!test_bit(WCD_EAR_EN, &wcd937x->status_mask)) {
+			wcd_disable_irq(&wcd937x->irq_info,
 				WCD937X_IRQ_HPHL_PDM_WD_INT);
-		if (wcd937x->update_wcd_event)
-			wcd937x->update_wcd_event(wcd937x->handle,
+			if (wcd937x->update_wcd_event)
+				wcd937x->update_wcd_event(wcd937x->handle,
 						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x1));
+		}
 		blocking_notifier_call_chain(&wcd937x->mbhc->notifier,
 					     WCD_EVENT_PRE_HPHL_PA_OFF,
 					     &wcd937x->mbhc->wcd_mbhc);
@@ -929,9 +935,9 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 		 */
 		if (test_bit(HPH_PA_DELAY, &wcd937x->status_mask)) {
 			if (!wcd937x->comp1_enable)
-				usleep_range(20000, 20100);
+				usleep_range(20000, 20500);
 			else
-				usleep_range(7000, 7100);
+				usleep_range(7000, 7500);
 			clear_bit(HPH_PA_DELAY, &wcd937x->status_mask);
 		}
 
@@ -946,6 +952,7 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 			     WCD_CLSH_EVENT_POST_PA,
 			     WCD_CLSH_STATE_HPHL,
 			     hph_mode);
+		clear_bit(WCD_HPHL_EN, &wcd937x->status_mask);
 		break;
 	};
 	return ret;
@@ -1034,10 +1041,12 @@ static int wcd937x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL2,
 					0x05, 0x05);
-		else
+		else {
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL0,
 					0x17, 0x13);
+			set_bit(WCD_EAR_EN, &wcd937x->status_mask);
+		}
 		if (!wcd937x->comp1_enable)
 			snd_soc_component_update_bits(component,
 				WCD937X_ANA_EAR_COMPANDER_CTL, 0x80, 0x80);
@@ -1055,21 +1064,28 @@ static int wcd937x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 		if (wcd937x->ear_rx_path & EAR_RX_PATH_AUX)
 			wcd_enable_irq(&wcd937x->irq_info,
 					WCD937X_IRQ_AUX_PDM_WD_INT);
-		else
+		else if (!test_bit(WCD_HPHL_EN, &wcd937x->status_mask))
 			wcd_enable_irq(&wcd937x->irq_info,
 					WCD937X_IRQ_HPHL_PDM_WD_INT);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		if (wcd937x->ear_rx_path & EAR_RX_PATH_AUX)
+		if (wcd937x->ear_rx_path & EAR_RX_PATH_AUX) {
 			wcd_disable_irq(&wcd937x->irq_info,
 					WCD937X_IRQ_AUX_PDM_WD_INT);
-		else
-			wcd_disable_irq(&wcd937x->irq_info,
+			if (wcd937x->update_wcd_event)
+				wcd937x->update_wcd_event(wcd937x->handle,
+					SLV_BOLERO_EVT_RX_MUTE,
+					(WCD_RX1 << 0x10 | 0x1));
+		} else {
+			if (!test_bit(WCD_HPHL_EN, &wcd937x->status_mask)) {
+				wcd_disable_irq(&wcd937x->irq_info,
 					WCD937X_IRQ_HPHL_PDM_WD_INT);
-		if (wcd937x->update_wcd_event)
-			wcd937x->update_wcd_event(wcd937x->handle,
+				if (wcd937x->update_wcd_event)
+					wcd937x->update_wcd_event(wcd937x->handle,
 						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x1));
+			}
+		}
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		if (!wcd937x->comp1_enable)
@@ -1086,10 +1102,12 @@ static int wcd937x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL2,
 					0x05, 0x00);
-		else
+		else {
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL0,
 					0x17, 0x00);
+			clear_bit(WCD_EAR_EN, &wcd937x->status_mask);
+		}
 		usleep_range(10000, 10010);
 		/* disable EAR CnP FSM */
 		snd_soc_component_update_bits(component,
@@ -1155,13 +1173,16 @@ static int wcd937x_enable_rx1(struct snd_soc_dapm_widget *w,
 			wcd937x_rx_connect_port(component, COMP_L, true);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		wcd937x_rx_connect_port(component, HPH_L, false);
-		if (wcd937x->comp1_enable)
-			wcd937x_rx_connect_port(component, COMP_L, false);
-		wcd937x_rx_clk_disable(component);
-		snd_soc_component_update_bits(component,
+		if (!test_bit(WCD_HPHL_EN, &wcd937x->status_mask) &&
+			!test_bit(WCD_EAR_EN, &wcd937x->status_mask)) {
+			wcd937x_rx_connect_port(component, HPH_L, false);
+			if (wcd937x->comp1_enable)
+				wcd937x_rx_connect_port(component, COMP_L, false);
+			wcd937x_rx_clk_disable(component);
+			snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_CDC_DIG_CLK_CTL,
 				0x01, 0x00);
+		}
 		break;
 	};
 	return 0;
